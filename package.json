@@ -1,0 +1,27 @@
+{
+  "name": "muse-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lightweight Muse (muse.ai) desktop wrapper for macOS and Linux (Tauri v2 system webview).",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:rust-policy": "bash scripts/test-rust-policy.sh",
+    "prereqs": "bash scripts/check-prereqs.sh",
+    "smoke": "bash scripts/smoke.sh",
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icon": "tauri icon src-tauri/icons/icon.png"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-notification": "2.4.0",
+    "@tauri-apps/plugin-opener": "2.5.5"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

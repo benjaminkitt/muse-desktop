@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "kind": "orca-observer-view",
+  "observer": "orca",
+  "role": "run",
+  "runId": "a15ba26d-b30c-427a-b78f-3acc7d5a3adb",
+  "title": "subagents · worker · 2",
+  "worktree": "/home/benjamin/orca/workspaces/muse-desktop/initial-build",
+  "state": "open",
+  "createdAt": "2026-09-09T23:31:48.558Z",
+  "logPath": "/tmp/pi-subagents-uid-1000/orca-progress/a15ba26d-b30c-427a-b78f-3acc7d5a3adb-0-b001b357-0691-4110-ad04-c593a87dca14.log",
+  "updatedAt": "2026-09-09T23:31:48.934Z",
+  "orcaRaw": "}"
+}

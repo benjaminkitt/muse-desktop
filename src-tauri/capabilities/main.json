@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "Local-window capability. The bundled (local) main window may use the notification sender and the opener for external URLs. No filesystem, shell, or dialog access.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "notification:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://**" }]
+    }
+  ]
+}

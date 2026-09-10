@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Muse",
+  "version": "0.1.0",
+  "identifier": "ai.muse.desktop",
+  "build": {
+    "devUrl": "https://muse.ai",
+    "frontendDist": "../frontend/dist",
+    "beforeDevCommand": "bash scripts/inline-frontend.sh",
+    "beforeBuildCommand": "bash scripts/inline-frontend.sh"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "macOSPrivateApi": false,
+    "security": {
+      "csp": "default-src 'self' https://muse.ai; script-src 'self' 'unsafe-inline' https://muse.ai; style-src 'self' 'unsafe-inline' https://muse.ai; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; connect-src 'self' https://muse.ai wss://muse.ai https://*.meta.com https://*.facebook.com; font-src 'self' data: https:; frame-src 'self' https://muse.ai https://auth.meta.com https://*.facebook.com; navigate-to https://muse.ai https://www.muse.ai https://auth.meta.com https://*.facebook.com; object-src 'none'; base-uri 'none'",
+      "capabilities": ["main-capability", "remote-notify"]
+    },
+    "windows": []
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Utility",
+    "shortDescription": "Lightweight Muse desktop wrapper",
+    "longDescription": "Minimal Tauri v2 system-webview wrapper for https://muse.ai (macOS and Linux).",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png"],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "linux": {
+      "deb": {}
+    }
+  }
+}

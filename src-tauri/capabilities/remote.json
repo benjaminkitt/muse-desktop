@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "remote-notify",
+  "description": "Remote-content capability for the exact trusted origin https://muse.ai. Grants the LEAST privilege needed for the Notification bridge: permission queries and sending notifications only. The remote page has NO opener grant: external http(s) is opened from Rust (on_navigation / on_new_window via AppHandle, which uses the local-window opener scope). No channel management, no listeners, no filesystem/shell/dialog.",
+  "windows": ["main"],
+  "remote": { "urls": ["https://muse.ai"] },
+  "permissions": [
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "notification:allow-notify",
+    "core:default"
+  ]
+}
