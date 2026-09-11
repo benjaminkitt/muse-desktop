@@ -14,7 +14,7 @@ npm install
 npm run dev
 ```
 
-The Nix shell supplies Electron 43. On macOS, install Node.js, run `npm install`, then use the same commands.
+The Nix shell supports both Intel and Apple Silicon macOS, as well as x86_64 and ARM Linux, and supplies Electron 43. On macOS, enter `nix develop`, run `npm install`, then use the same commands.
 
 Create installers with:
 
