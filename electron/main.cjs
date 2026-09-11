@@ -1,73 +1,108 @@
-const { app, BrowserWindow, session, shell } = require('electron');
-const path = require('node:path');
+const { app, BrowserWindow, session, shell } = require("electron");
+const path = require("node:path");
 
-const MUSE_URL = 'https://muse.ai/';
-const { isTrustedNavigation, uniqueDownloadPath } = require('./utils.cjs');
+const MUSE_URL = "https://muse.ai/";
+const {
+  isTrustedNavigation,
+  isAllowedExternalUrl,
+  isNotificationOrigin,
+  uniqueDownloadPath,
+} = require("./utils.cjs");
+
+function openExternalUrl(url) {
+  if (isAllowedExternalUrl(url)) {
+    void shell
+      .openExternal(url)
+      .catch(() => console.warn("Could not open external link"));
+  }
+}
 
 function configureSession(ses) {
-  ses.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
-    return permission === 'notifications' && isTrustedNavigation(requestingOrigin);
-  });
+  ses.setPermissionCheckHandler(
+    (_webContents, permission, requestingOrigin) => {
+      return (
+        permission === "notifications" && isNotificationOrigin(requestingOrigin)
+      );
+    },
+  );
 
-  ses.setPermissionRequestHandler((_webContents, permission, callback, details) => {
-    const requestingUrl = details?.requestingUrl ?? '';
-    callback(permission === 'notifications' && isTrustedNavigation(requestingUrl));
-  });
+  ses.setPermissionRequestHandler(
+    (_webContents, permission, callback, details) => {
+      const requestingUrl = details?.requestingUrl ?? "";
+      callback(
+        permission === "notifications" && isNotificationOrigin(requestingUrl),
+      );
+    },
+  );
 
-  ses.on('will-download', (_event, item) => {
-    item.setSavePath(uniqueDownloadPath(app.getPath('downloads'), item.getFilename()));
+  ses.on("will-download", (_event, item) => {
+    try {
+      item.setSavePath(
+        uniqueDownloadPath(app.getPath("downloads"), item.getFilename()),
+      );
+    } catch {
+      item.cancel();
+      console.warn("Could not reserve download destination");
+    }
   });
 }
 
 function createMuseWindow() {
   const window = new BrowserWindow({
-    title: 'Muse',
+    title: "Muse",
     width: 1180,
     height: 820,
     minWidth: 760,
     minHeight: 540,
-    backgroundColor: '#101117',
+    backgroundColor: "#101117",
     show: false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      partition: 'persist:muse',
+      partition: "persist:muse",
     },
   });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (isTrustedNavigation(url)) return { action: 'allow' };
-    shell.openExternal(url);
-    return { action: 'deny' };
+    if (isTrustedNavigation(url)) {
+      void window
+        .loadURL(url)
+        .catch(() => console.warn("Could not load Muse link"));
+    } else {
+      openExternalUrl(url);
+    }
+    return { action: "deny" };
   });
 
-  window.webContents.on('will-navigate', (event, url) => {
+  const guardNavigation = (event, url, _isInPlace, isMainFrame = true) => {
     if (!isTrustedNavigation(url)) {
       event.preventDefault();
-      void shell.openExternal(url);
+      if (isMainFrame) openExternalUrl(url);
     }
-  });
+  };
+  window.webContents.on("will-navigate", guardNavigation);
+  window.webContents.on("will-redirect", guardNavigation);
 
-  window.once('ready-to-show', () => window.show());
+  window.once("ready-to-show", () => window.show());
   void window.loadURL(MUSE_URL);
   return window;
 }
 
 function start() {
   // Keep browser profile data in a predictable, product-specific directory.
-  app.setPath('userData', path.join(app.getPath('appData'), 'Muse'));
+  app.setPath("userData", path.join(app.getPath("appData"), "Muse"));
 
   app.whenReady().then(() => {
-    configureSession(session.fromPartition('persist:muse'));
+    configureSession(session.fromPartition("persist:muse"));
     createMuseWindow();
-    app.on('activate', () => {
+    app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createMuseWindow();
     });
   });
 
-  app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
   });
 }
 
