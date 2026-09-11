@@ -1,0 +1,47 @@
+{
+  "name": "muse-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "A cross-platform desktop client for Meta Muse",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "build": "electron-builder",
+    "test": "node --test electron/main.test.cjs"
+  },
+  "devDependencies": {
+    "electron": "43.5.1",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "ai.muse.desktop",
+    "productName": "Muse",
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "category": "Utility",
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "synopsis": "Desktop client for Meta Muse",
+      "maintainer": "Muse Desktop contributors <muse-desktop@localhost>",
+      "syncDesktopName": true
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "icon": "build/icon.png"
+  },
+  "author": "Muse Desktop contributors <muse-desktop@localhost>",
+  "homepage": "https://muse.ai",
+  "desktopName": "muse-desktop"
+}
