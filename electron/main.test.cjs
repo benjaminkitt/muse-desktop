@@ -94,6 +94,7 @@ async function startWithMocks(downloadsDir, options = {}) {
     }
     close() {
       this.destroyed = true;
+      this.emit("closed");
     }
   }
   const app = new EventEmitter();
@@ -129,7 +130,7 @@ async function startWithMocks(downloadsDir, options = {}) {
   );
   await Promise.resolve();
   await new Promise((resolve) => setImmediate(resolve));
-  return { windows, externalUrls, ses, dialogs };
+  return { windows, externalUrls, ses, dialogs, BrowserWindow };
 }
 
 test("successful initial load waits for ready-to-show without a recovery dialog", async () => {
@@ -199,7 +200,7 @@ test("closing a window during load or recovery does not access it or retry", asy
   }
 });
 
-test("guards direct navigation and redirects and never creates child windows", async () => {
+test("guards main-window navigation and redirects while allowing safe popups", async () => {
   const { windows, externalUrls } = await startWithMocks();
   const window = windows[0];
   for (const eventName of ["will-navigate", "will-redirect"]) {
@@ -229,22 +230,99 @@ test("guards direct navigation and redirects and never creates child windows", a
       );
     }
   }
+  const before = externalUrls.length;
   for (const url of [
     "https://muse.ai/chat",
     "https://auth.meta.com/aymh/login",
+    "https://example.com/oauth/authorize",
+    "about:blank",
+    "",
+  ]) {
+    const result = window.openWindow({ url });
+    assert.equal(result.action, "allow");
+    const settings = result.overrideBrowserWindowOptions;
+    assert.equal(settings.parent, window);
+    assert.equal(settings.webPreferences.partition, "persist:muse");
+    assert.equal(settings.webPreferences.contextIsolation, true);
+    assert.equal(settings.webPreferences.sandbox, true);
+    assert.equal(settings.webPreferences.webSecurity, true);
+    assert.equal(settings.webPreferences.nodeIntegration, false);
+    assert.equal(settings.webPreferences.nodeIntegrationInSubFrames, false);
+  }
+  for (const url of [
+    "smb://host/share",
+    "file:///tmp/test",
+    "javascript:alert(1)",
+    "data:text/html,test",
+    "custom:launch",
+    "invalid",
   ]) {
     assert.equal(window.openWindow({ url }).action, "deny");
-    assert.equal(window.loadedUrls.at(-1), url);
   }
-  const before = externalUrls.length;
+  assert.equal(externalUrls.length, before);
+  assert.deepEqual(window.loadedUrls, ["https://muse.ai/"]);
+});
+
+test("OAuth children retain provider redirects and callbacks and guard nested popups", async () => {
+  const { windows, externalUrls, BrowserWindow } = await startWithMocks();
+  const window = windows[0];
+  const child = new BrowserWindow();
+  window.webContents.emit("did-create-window", child);
+  for (const eventName of ["will-navigate", "will-redirect"]) {
+    for (const url of [
+      "about:blank",
+      "https://accounts.google.com/o/oauth2/v2/auth?state=test",
+      "https://example.com/login",
+      "https://muse.ai/oauth/callback?code=test",
+      "javascript:alert(1)",
+      "file:///tmp/test",
+      "smb://host/share",
+      "custom:launch",
+    ]) {
+      let prevented = false;
+      child.webContents.emit(
+        eventName,
+        {
+          preventDefault() {
+            prevented = true;
+          },
+        },
+        url,
+        false,
+        true,
+      );
+      assert.equal(
+        prevented,
+        url !== "about:blank" && !isAllowedExternalUrl(url),
+      );
+    }
+  }
+  assert.equal(externalUrls.length, 0);
+  assert.deepEqual(window.loadedUrls, ["https://muse.ai/"]);
   assert.equal(
-    window.openWindow({ url: "https://example.com/popup" }).action,
+    child.openWindow({ url: "https://example.com/login" }).action,
+    "allow",
+  );
+  assert.equal(child.openWindow({ url: "file:///tmp/test" }).action, "deny");
+  const nested = new BrowserWindow();
+  child.webContents.emit("did-create-window", nested);
+  assert.equal(
+    nested.openWindow({ url: "javascript:alert(1)" }).action,
     "deny",
   );
-  assert.equal(externalUrls.at(-1), "https://example.com/popup");
-  assert.equal(window.openWindow({ url: "smb://host/share" }).action, "deny");
-  assert.equal(externalUrls.length, before + 1);
-  assert.equal(windows.length, 1);
+  window.close();
+  assert.equal(child.isDestroyed(), true);
+  assert.equal(nested.isDestroyed(), true);
+});
+
+test("closing a popup releases its opener lifecycle listener", async () => {
+  const { windows, BrowserWindow } = await startWithMocks();
+  const window = windows[0];
+  const child = new BrowserWindow();
+  window.webContents.emit("did-create-window", child);
+  assert.equal(window.listenerCount("closed"), 1);
+  child.close();
+  assert.equal(window.listenerCount("closed"), 0);
 });
 
 test("both session permission handlers restrict notifications to the application origin", async () => {

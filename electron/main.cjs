@@ -47,6 +47,56 @@ function configureSession(ses) {
   });
 }
 
+// Let Chromium create the child so window.opener, postMessage, POST bodies,
+// and window.open('') followed by an asynchronous location assignment survive.
+// A manually-created window or an OS browser cannot preserve that relationship.
+function configureWindowNavigation(window, isPopup = false) {
+  const contents = window.webContents;
+  contents.setWindowOpenHandler(({ url }) => {
+    if (url !== "about:blank" && url !== "" && !isAllowedExternalUrl(url)) {
+      return { action: "deny" };
+    }
+    return {
+      action: "allow",
+      overrideBrowserWindowOptions: {
+        parent: window,
+        width: 600,
+        height: 760,
+        show: true,
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          nodeIntegrationInSubFrames: false,
+          sandbox: true,
+          webSecurity: true,
+          partition: "persist:muse",
+        },
+      },
+    };
+  });
+  contents.on("did-create-window", (child) => {
+    configureWindowNavigation(child, true);
+    // Do not leave authentication windows alive after their opener closes.
+    const closeChild = () => {
+      if (!child.isDestroyed()) child.close();
+    };
+    window.once("closed", closeChild);
+    child.once("closed", () => window.removeListener("closed", closeChild));
+  });
+
+  const guardNavigation = (event, url, _isInPlace, isMainFrame = true) => {
+    const allowed = isPopup
+      ? url === "about:blank" || isAllowedExternalUrl(url)
+      : isTrustedNavigation(url);
+    if (!allowed) {
+      event.preventDefault();
+      if (!isPopup && isMainFrame) openExternalUrl(url);
+    }
+  };
+  contents.on("will-navigate", guardNavigation);
+  contents.on("will-redirect", guardNavigation);
+}
+
 function createMuseWindow() {
   const window = new BrowserWindow({
     title: "Muse",
@@ -64,25 +114,7 @@ function createMuseWindow() {
     },
   });
 
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    if (isTrustedNavigation(url)) {
-      void window
-        .loadURL(url)
-        .catch(() => console.warn("Could not load Muse link"));
-    } else {
-      openExternalUrl(url);
-    }
-    return { action: "deny" };
-  });
-
-  const guardNavigation = (event, url, _isInPlace, isMainFrame = true) => {
-    if (!isTrustedNavigation(url)) {
-      event.preventDefault();
-      if (isMainFrame) openExternalUrl(url);
-    }
-  };
-  window.webContents.on("will-navigate", guardNavigation);
-  window.webContents.on("will-redirect", guardNavigation);
+  configureWindowNavigation(window);
 
   window.once("ready-to-show", () => {
     if (!window.isDestroyed()) window.show();
