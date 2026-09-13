@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, shell } = require("electron");
+const { app, BrowserWindow, dialog, session, shell } = require("electron");
 const path = require("node:path");
 
 const MUSE_URL = "https://muse.ai/";
@@ -84,8 +84,38 @@ function createMuseWindow() {
   window.webContents.on("will-navigate", guardNavigation);
   window.webContents.on("will-redirect", guardNavigation);
 
-  window.once("ready-to-show", () => window.show());
-  void window.loadURL(MUSE_URL);
+  window.once("ready-to-show", () => {
+    if (!window.isDestroyed()) window.show();
+  });
+  async function loadMuse() {
+    while (!window.isDestroyed()) {
+      try {
+        await window.loadURL(MUSE_URL);
+        return;
+      } catch {
+        if (window.isDestroyed()) return;
+        // A failed first request may never emit ready-to-show.
+        window.show();
+        const { response } = await dialog.showMessageBox(window, {
+          type: "error",
+          title: "Could not load Muse",
+          message: "Muse could not be reached.",
+          detail: "Check your internet connection, then try again.",
+          buttons: ["Retry", "Close"],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        if (window.isDestroyed()) return;
+        if (response !== 0) {
+          window.close();
+          return;
+        }
+      }
+    }
+  }
+  void loadMuse().catch(() =>
+    console.warn("Could not show Muse load recovery"),
+  );
   return window;
 }
 

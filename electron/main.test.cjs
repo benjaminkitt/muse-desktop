@@ -59,7 +59,8 @@ test("only permits HTTP(S) external links and exact application-origin notificat
 });
 
 // Exercise the actual startup/handler wiring without launching a GUI or loading Muse.
-async function startWithMocks(downloadsDir) {
+async function startWithMocks(downloadsDir, options = {}) {
+  const dialogs = [];
   const windows = [];
   const externalUrls = [];
   const ses = new EventEmitter();
@@ -73,6 +74,8 @@ async function startWithMocks(downloadsDir) {
     constructor() {
       super();
       this.loadedUrls = [];
+      this.destroyed = false;
+      this.showCount = 0;
       this.webContents = new EventEmitter();
       this.webContents.setWindowOpenHandler = (handler) => {
         this.openWindow = handler;
@@ -81,9 +84,17 @@ async function startWithMocks(downloadsDir) {
     }
     loadURL(url) {
       this.loadedUrls.push(url);
-      return Promise.resolve();
+      return options.loadURL?.(this) ?? Promise.resolve();
     }
-    show() {}
+    show() {
+      this.showCount += 1;
+    }
+    isDestroyed() {
+      return this.destroyed;
+    }
+    close() {
+      this.destroyed = true;
+    }
   }
   const app = new EventEmitter();
   app.getPath = () => downloadsDir ?? os.tmpdir();
@@ -92,6 +103,14 @@ async function startWithMocks(downloadsDir) {
   const electron = {
     app,
     BrowserWindow,
+    dialog: {
+      showMessageBox: (window, settings) => {
+        dialogs.push({ window, settings });
+        return (
+          options.showMessageBox?.(window) ?? Promise.resolve({ response: 1 })
+        );
+      },
+    },
     session: { fromPartition: () => ses },
     shell: {
       openExternal: (url) => {
@@ -109,8 +128,76 @@ async function startWithMocks(downloadsDir) {
     },
   );
   await Promise.resolve();
-  return { windows, externalUrls, ses };
+  await new Promise((resolve) => setImmediate(resolve));
+  return { windows, externalUrls, ses, dialogs };
 }
+
+test("successful initial load waits for ready-to-show without a recovery dialog", async () => {
+  const {
+    windows: [window],
+    dialogs,
+  } = await startWithMocks();
+  assert.equal(window.showCount, 0);
+  window.emit("ready-to-show");
+  assert.equal(window.showCount, 1);
+  assert.equal(dialogs.length, 0);
+});
+
+test("failed initial loads show recovery without ready-to-show and can retry repeatedly", async () => {
+  const {
+    windows: [window],
+    dialogs,
+  } = await startWithMocks(undefined, {
+    loadURL: (window) =>
+      window.loadedUrls.length < 3
+        ? Promise.reject(new Error("offline"))
+        : Promise.resolve(),
+    showMessageBox: () => Promise.resolve({ response: 0 }),
+  });
+  assert.deepEqual(window.loadedUrls, Array(3).fill("https://muse.ai/"));
+  assert.equal(window.showCount, 2);
+  assert.equal(window.isDestroyed(), false);
+  assert.equal(dialogs.length, 2);
+  assert.equal(dialogs[0].window, window);
+  assert.deepEqual(Array.from(dialogs[0].settings.buttons), ["Retry", "Close"]);
+  assert.equal(dialogs[0].settings.cancelId, 1);
+});
+
+test("closing recovery stops retrying", async () => {
+  const {
+    windows: [window],
+    dialogs,
+  } = await startWithMocks(undefined, {
+    loadURL: () => Promise.reject(new Error("offline")),
+  });
+  assert.equal(window.showCount, 1);
+  assert.equal(window.isDestroyed(), true);
+  assert.equal(window.loadedUrls.length, 1);
+  assert.equal(dialogs.length, 1);
+});
+
+test("closing a window during load or recovery does not access it or retry", async () => {
+  for (const closeDuringLoad of [true, false]) {
+    const {
+      windows: [window],
+      dialogs,
+    } = await startWithMocks(undefined, {
+      loadURL: (window) => {
+        if (closeDuringLoad) window.close();
+        return Promise.reject(new Error("offline"));
+      },
+      showMessageBox: (window) => {
+        window.close();
+        return Promise.resolve({ response: 0 });
+      },
+    });
+    assert.equal(window.loadedUrls.length, 1);
+    assert.equal(dialogs.length, closeDuringLoad ? 0 : 1);
+    const shows = window.showCount;
+    window.emit("ready-to-show");
+    assert.equal(window.showCount, shows);
+  }
+});
 
 test("guards direct navigation and redirects and never creates child windows", async () => {
   const { windows, externalUrls } = await startWithMocks();
