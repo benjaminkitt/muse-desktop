@@ -2,6 +2,7 @@
   "name": "muse-desktop",
   "version": "0.2.0",
   "private": true,
+  "license": "MIT",
   "description": "A cross-platform desktop client for Meta Muse",
   "main": "electron/main.cjs",
   "scripts": {
@@ -17,6 +18,7 @@
   "build": {
     "appId": "ai.muse.desktop",
     "productName": "Muse",
+    "artifactName": "Muse-${version}-${os}-${arch}.${ext}",
     "files": [
       "electron/**/*",
       "package.json"
@@ -32,7 +34,12 @@
       "maintainer": "Muse Desktop contributors <muse-desktop@localhost>",
       "syncDesktopName": true
     },
+    "win": {
+      "target": ["nsis"],
+      "signAndEditExecutable": false
+    },
     "mac": {
+      "identity": null,
       "category": "public.app-category.productivity",
       "target": [
         "dmg",
