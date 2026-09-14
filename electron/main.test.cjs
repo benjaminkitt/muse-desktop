@@ -93,6 +93,10 @@ async function startWithMocks(downloadsDir, options = {}) {
       return this.destroyed;
     }
     close() {
+      if (this.preventClose) return;
+      this.destroy();
+    }
+    destroy() {
       this.destroyed = true;
       this.emit("closed");
     }
@@ -310,6 +314,10 @@ test("OAuth children retain provider redirects and callbacks and guard nested po
     nested.openWindow({ url: "javascript:alert(1)" }).action,
     "deny",
   );
+  child.preventClose = true;
+  nested.preventClose = true;
+  child.close();
+  assert.equal(child.isDestroyed(), false);
   window.close();
   assert.equal(child.isDestroyed(), true);
   assert.equal(nested.isDestroyed(), true);
@@ -363,15 +371,71 @@ test("reserves distinct paths for simultaneous downloads before either writes da
       ses.emit(
         "will-download",
         {},
-        {
+        Object.assign(new EventEmitter(), {
           getFilename: () => "report.pdf",
           setSavePath: (destination) => destinations.push(destination),
           cancel: () => assert.fail("download unexpectedly cancelled"),
-        },
+        }),
       );
     }
     assert.equal(new Set(destinations).size, 2);
     assert.ok(destinations.every((destination) => fs.existsSync(destination)));
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("cleans failed downloads but preserves completed downloads", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "muse-cleanup-"));
+  try {
+    const { ses } = await startWithMocks(directory);
+    for (const state of ["cancelled", "interrupted", "completed"]) {
+      for (const content of ["", "download data"]) {
+        let destination;
+        const item = Object.assign(new EventEmitter(), {
+          getFilename: () => "report.pdf",
+          setSavePath: (value) => {
+            destination = value;
+          },
+          cancel: () => assert.fail("unexpected cancellation"),
+        });
+        ses.emit("will-download", {}, item);
+        assert.equal(destination, path.join(directory, "report.pdf"));
+        fs.writeFileSync(destination, content);
+        // An interruption update can be resumed; only terminal done cleans up.
+        item.emit("updated", {}, "interrupted");
+        assert.equal(fs.existsSync(destination), true);
+        item.emit("done", {}, state);
+        assert.equal(fs.existsSync(destination), state === "completed");
+        if (state === "completed") {
+          assert.equal(fs.readFileSync(destination, "utf8"), content);
+          fs.unlinkSync(destination);
+        }
+      }
+    }
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("releases the reservation when assigning the save path fails", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "muse-setup-"));
+  try {
+    const { ses } = await startWithMocks(directory);
+    let cancelled = false;
+    const item = Object.assign(new EventEmitter(), {
+      getFilename: () => "report.pdf",
+      setSavePath: () => {
+        throw new Error("save path failed");
+      },
+      cancel: () => {
+        cancelled = true;
+        item.emit("done", {}, "cancelled");
+      },
+    });
+    ses.emit("will-download", {}, item);
+    assert.equal(cancelled, true);
+    assert.deepEqual(fs.readdirSync(directory), []);
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }

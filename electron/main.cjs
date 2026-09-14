@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, session, shell } = require("electron");
 const path = require("node:path");
+const fs = require("node:fs");
 
 const MUSE_URL = "https://muse.ai/";
 const {
@@ -36,11 +37,26 @@ function configureSession(ses) {
   );
 
   ses.on("will-download", (_event, item) => {
+    let destination;
+    const cleanup = () => {
+      if (!destination) return;
+      try {
+        fs.rmSync(destination, { force: true });
+      } catch {
+        console.warn("Could not remove failed download destination");
+      }
+    };
     try {
-      item.setSavePath(
-        uniqueDownloadPath(app.getPath("downloads"), item.getFilename()),
+      destination = uniqueDownloadPath(
+        app.getPath("downloads"),
+        item.getFilename(),
       );
+      item.once("done", (_event, state) => {
+        if (state !== "completed") cleanup();
+      });
+      item.setSavePath(destination);
     } catch {
+      cleanup();
       item.cancel();
       console.warn("Could not reserve download destination");
     }
@@ -78,7 +94,7 @@ function configureWindowNavigation(window, isPopup = false) {
     configureWindowNavigation(child, true);
     // Do not leave authentication windows alive after their opener closes.
     const closeChild = () => {
-      if (!child.isDestroyed()) child.close();
+      if (!child.isDestroyed()) child.destroy();
     };
     window.once("closed", closeChild);
     child.once("closed", () => window.removeListener("closed", closeChild));
