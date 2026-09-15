@@ -113,6 +113,8 @@ The embedded window has Node integration disabled and uses a sandboxed, isolated
 
 Links requesting a new window and OAuth popups open in managed, sandboxed child windows sharing the Muse profile. These preserve `window.opener`, callback messaging, and blank-window-then-redirect flows without navigating away from the main Muse page. Child windows allow HTTP(S) navigation for identity providers and callbacks, block unsafe URL schemes, and close when their opener closes. They receive no Node or shell access; notification permissions remain restricted to the exact Muse origin.
 
+Copy buttons using the browser Clipboard API can write to the clipboard only from the exact `https://muse.ai` origin. Programmatic clipboard reads and clipboard permissions for other origins remain denied. Restart the development app or rebuild/reinstall the packaged app to apply permission changes.
+
 Some identity providers may prohibit authentication in embedded browsers. The popup regression tests verify desktop handler behavior, not successful authorization with every provider; authenticated connection flows still require manual testing.
 
 ## License
