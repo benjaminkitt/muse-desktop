@@ -83,6 +83,12 @@ nix develop --command npm run build
 
 On Linux this creates AppImage, `.deb`, and `.rpm` packages. On macOS it creates `.dmg` and `.zip` artifacts. On Windows, use Node.js 22 and `npm ci`, then `npm run build` to create an NSIS `.exe` installer. Packages are written to `dist/` with platform and architecture in their filenames.
 
+## Release workflow and retries
+
+Run the **Release** workflow on the default branch with a `patch`, `minor`, or `major` bump. It pushes the version commit and tag, then builds all platforms and publishes their assets.
+
+If a build or publication fails after the tag was pushed, start a fresh **Release** run with `resume_tag` set to that exact tag (for example `v0.2.1`). The bump choice is ignored: the workflow rebuilds the tagged commit and creates or resumes its draft release without changing the version, branch, or tag. Do not leave `resume_tag` blank when retrying a stranded release, as that allocates a new version. Only existing version-matching tags on the default branch's history that have not already been published are accepted. This also works after the original run's artifacts expire.
+
 ## Clear app data
 
 Quit Muse, then remove its profile and cache:

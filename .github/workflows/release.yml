@@ -12,6 +12,11 @@ on:
           - patch
           - minor
           - major
+      resume_tag:
+        description: 'Retry an existing unpublished tag (for example v0.2.1); ignores bump'
+        required: false
+        default: ''
+        type: string
 
 # Serialize version allocation, including builds and publication.
 concurrency:
@@ -34,22 +39,43 @@ jobs:
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
       - run: npm test
-      - name: Bump version and push commit and tag
+      - name: Allocate a version or resume an existing tag
         id: version
         env:
           BUMP: ${{ inputs.bump }}
+          RESUME_TAG: ${{ inputs.resume_tag }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          set -euo pipefail
+          if [ -n "$RESUME_TAG" ]; then
+            [[ "$RESUME_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+            SHA=$(git rev-parse --verify "refs/tags/$RESUME_TAG^{commit}")
+            git merge-base --is-ancestor "$SHA" "origin/$DEFAULT_BRANCH"
+            VERSION=$(git show "$SHA:package.json" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')
+            test "$RESUME_TAG" = "v$VERSION"
+            # Listing succeeds even if no release exists; API errors fail closed.
+            PUBLISHED=$(gh api --paginate "repos/$GH_REPO/releases" \
+              --jq ".[] | select(.tag_name == \"$RESUME_TAG\" and .draft == false) | .tag_name")
+            if [ -n "$PUBLISHED" ]; then
+              echo "Release $RESUME_TAG already published" >&2
+              exit 1
+            fi
+            echo "tag=$RESUME_TAG" >> "$GITHUB_OUTPUT"
+            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           case "$BUMP" in major|minor|patch) ;; *) exit 1 ;; esac
           npm version "$BUMP" --no-git-tag-version --ignore-scripts
           VERSION=$(node -p 'require("./package.json").version')
@@ -90,11 +116,11 @@ jobs:
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ needs.version.outputs.sha }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -105,7 +131,7 @@ jobs:
       - run: npm test
       - name: Build unsigned packages
         run: npm run build -- ${{ matrix.args }} --publish never
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-${{ matrix.platform }}
           if-no-files-found: error
@@ -128,7 +154,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
       TAG: ${{ needs.version.outputs.tag }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: release-*
           path: assets
