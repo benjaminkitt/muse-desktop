@@ -1,0 +1,174 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semver bump
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      resume_tag:
+        description: 'Retry an existing unpublished tag (for example v0.2.1); ignores bump'
+        required: false
+        default: ''
+        type: string
+
+# Serialize version allocation, including builds and publication.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - name: Require the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: test "$GITHUB_REF" = "refs/heads/$DEFAULT_BRANCH"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - name: Allocate a version or resume an existing tag
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+          RESUME_TAG: ${{ inputs.resume_tag }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ -n "$RESUME_TAG" ]; then
+            [[ "$RESUME_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+            SHA=$(git rev-parse --verify "refs/tags/$RESUME_TAG^{commit}")
+            git merge-base --is-ancestor "$SHA" "origin/$DEFAULT_BRANCH"
+            VERSION=$(git show "$SHA:package.json" | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).version')
+            test "$RESUME_TAG" = "v$VERSION"
+            # Listing succeeds even if no release exists; API errors fail closed.
+            PUBLISHED=$(gh api --paginate "repos/$GH_REPO/releases" \
+              --jq ".[] | select(.tag_name == \"$RESUME_TAG\" and .draft == false) | .tag_name")
+            if [ -n "$PUBLISHED" ]; then
+              echo "Release $RESUME_TAG already published" >&2
+              exit 1
+            fi
+            echo "tag=$RESUME_TAG" >> "$GITHUB_OUTPUT"
+            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$BUMP" in major|minor|patch) ;; *) exit 1 ;; esac
+          npm version "$BUMP" --no-git-tag-version --ignore-scripts
+          VERSION=$(node -p 'require("./package.json").version')
+          TAG="v$VERSION"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists" >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json
+          git commit -m "chore: release $TAG"
+          git tag "$TAG"
+          # Fail rather than overwrite a concurrent default-branch change.
+          git push --atomic origin "HEAD:refs/heads/$DEFAULT_BRANCH" "refs/tags/$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            os: ubuntu-24.04
+            args: --linux --x64
+          - platform: windows-x64
+            os: windows-2022
+            args: --win --x64
+          - platform: macos-x64
+            os: macos-15-intel
+            args: --mac --x64
+          - platform: macos-arm64
+            os: macos-15
+            args: --mac --arm64
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+      - run: npm ci
+      - run: npm test
+      - name: Build unsigned packages
+        run: npm run build -- ${{ matrix.args }} --publish never
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-${{ matrix.platform }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-*
+          path: assets
+          merge-multiple: true
+      - name: Create draft with changelog, upload assets, then publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A failed upload can be retried without allocating another version.
+          if gh release view "$TAG" --json isDraft > release.json; then
+            node -e 'if (!require("./release.json").isDraft) throw new Error("Release already published")'
+          else
+            gh release create "$TAG" --verify-tag --draft --title "Muse $TAG" \
+              --generate-notes --notes "Unsigned builds: macOS packages are not notarized, and Windows installers are not developer-signed. Your operating system may display security warnings."
+          fi
+          gh release upload "$TAG" assets/* --clobber
+          gh release edit "$TAG" --draft=false --latest
