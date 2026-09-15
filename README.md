@@ -83,6 +83,20 @@ nix develop --command npm run build
 
 On Linux this creates AppImage, `.deb`, and `.rpm` packages. On macOS it creates `.dmg` and `.zip` artifacts. On Windows, use Node.js 22 and `npm ci`, then `npm run build` to create an NSIS `.exe` installer. Packages are written to `dist/` with platform and architecture in their filenames.
 
+## Linux desktop integration
+
+Desktop shells (GNOME, KDE) show the app icon by matching the running window to an installed `muse-desktop.desktop` entry, which points at `muse-desktop` icons in the freedesktop hicolor theme. The identity basename `muse-desktop` is set in four places that must stay in sync: `desktopName` and `build.linux` in `package.json`, the `app.setDesktopName` call in `electron/main.cjs`, and the desktop entry in `flake.nix`. `test/packaging.test.cjs` fails if they drift apart.
+
+Linux packages install one PNG per size from `build/icons/` (16–1024px), and the Nix package also installs `build/icon.svg` as a scalable icon. Regenerate the sized set after changing the icon source:
+
+```bash
+for size in 16 24 32 48 64 96 128 256 512 1024; do
+  magick build/icon.png -resize ${size}x${size} build/icons/${size}x${size}.png
+done
+```
+
+Already-installed packages keep their old icon until rebuilt and reinstalled; desktop shells may also cache icons until relogin. The release workflow verifies that Linux artifacts contain the icon set and a matching desktop entry.
+
 ## Release workflow and retries
 
 Run the **Release** workflow on the default branch with a `patch`, `minor`, or `major` bump. It pushes the version commit and tag, then builds all platforms and publishes their assets.

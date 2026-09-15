@@ -126,11 +126,47 @@ jobs:
           cache: npm
       - name: Install Linux packaging dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y rpm
+        run: sudo apt-get update && sudo apt-get install -y rpm cpio
       - run: npm ci
       - run: npm test
       - name: Build unsigned packages
         run: npm run build -- ${{ matrix.args }} --publish never
+      - name: Verify Linux desktop integration artifacts
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          check_icons() {
+            for size in 16 24 32 48 64 96 128 256 512 1024; do
+              test -s "$1/usr/share/icons/hicolor/${size}x${size}/apps/muse-desktop.png"
+            done
+          }
+          check_desktop() {
+            grep -qx 'Icon=muse-desktop' "$1"
+            grep -qx 'StartupWMClass=muse-desktop' "$1"
+          }
+          check_dir=$(mktemp -d)
+          trap 'rm -rf "$check_dir"' EXIT
+          for deb in dist/*.deb; do
+            mkdir "$check_dir/deb"
+            dpkg-deb -x "$deb" "$check_dir/deb"
+            check_icons "$check_dir/deb"
+            check_desktop "$check_dir/deb/usr/share/applications/muse-desktop.desktop"
+            rm -rf "$check_dir/deb"
+          done
+          for rpm in dist/*.rpm; do
+            mkdir "$check_dir/rpm"
+            rpm2cpio "$rpm" | (cd "$check_dir/rpm" && cpio -idm --quiet)
+            check_icons "$check_dir/rpm"
+            check_desktop "$check_dir/rpm/usr/share/applications/muse-desktop.desktop"
+            rm -rf "$check_dir/rpm"
+          done
+          for appimage in dist/*.AppImage; do
+            appimage=$(realpath "$appimage")
+            (cd "$check_dir" && "$appimage" --appimage-extract > /dev/null)
+            check_icons "$check_dir/squashfs-root"
+            check_desktop "$check_dir/squashfs-root/muse-desktop.desktop"
+            rm -rf "$check_dir/squashfs-root"
+          done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-${{ matrix.platform }}
