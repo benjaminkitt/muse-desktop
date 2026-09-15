@@ -6,7 +6,7 @@ const MUSE_URL = "https://muse.ai/";
 const {
   isTrustedNavigation,
   isAllowedExternalUrl,
-  isNotificationOrigin,
+  isMuseOrigin,
   uniqueDownloadPath,
 } = require("./utils.cjs");
 
@@ -19,10 +19,16 @@ function openExternalUrl(url) {
 }
 
 function configureSession(ses) {
+  // Electron uses this write-only permission for navigator.clipboard.writeText().
+  // Do not grant clipboard-read: copying does not require reading the clipboard.
+  const allowedPermissions = new Set([
+    "notifications",
+    "clipboard-sanitized-write",
+  ]);
   ses.setPermissionCheckHandler(
     (_webContents, permission, requestingOrigin) => {
       return (
-        permission === "notifications" && isNotificationOrigin(requestingOrigin)
+        allowedPermissions.has(permission) && isMuseOrigin(requestingOrigin)
       );
     },
   );
@@ -31,7 +37,7 @@ function configureSession(ses) {
     (_webContents, permission, callback, details) => {
       const requestingUrl = details?.requestingUrl ?? "";
       callback(
-        permission === "notifications" && isNotificationOrigin(requestingUrl),
+        allowedPermissions.has(permission) && isMuseOrigin(requestingUrl),
       );
     },
   );

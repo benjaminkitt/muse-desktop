@@ -31,7 +31,7 @@ function isAllowedExternalUrl(rawUrl) {
   }
 }
 
-function isNotificationOrigin(rawUrl) {
+function isMuseOrigin(rawUrl) {
   try {
     return new URL(rawUrl).origin === "https://muse.ai";
   } catch {
@@ -65,6 +65,6 @@ function uniqueDownloadPath(downloadsDir, filename) {
 module.exports = {
   isTrustedNavigation,
   isAllowedExternalUrl,
-  isNotificationOrigin,
+  isMuseOrigin,
   uniqueDownloadPath,
 };

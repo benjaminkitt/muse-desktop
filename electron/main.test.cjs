@@ -8,7 +8,7 @@ const { EventEmitter } = require("node:events");
 const {
   isTrustedNavigation,
   isAllowedExternalUrl,
-  isNotificationOrigin,
+  isMuseOrigin,
   uniqueDownloadPath,
 } = require("./utils.cjs");
 
@@ -32,7 +32,7 @@ test("permits Muse and its narrowly scoped Meta sign-in redirects", () => {
   assert.equal(isTrustedNavigation("http://muse.ai"), false);
 });
 
-test("only permits HTTP(S) external links and exact application-origin notifications", () => {
+test("only permits HTTP(S) external links and recognizes the exact Muse origin", () => {
   for (const url of ["https://example.com", "http://example.com"]) {
     assert.equal(isAllowedExternalUrl(url), true);
   }
@@ -45,7 +45,7 @@ test("only permits HTTP(S) external links and exact application-origin notificat
   ]) {
     assert.equal(isAllowedExternalUrl(url), false);
   }
-  assert.equal(isNotificationOrigin("https://muse.ai/chat"), true);
+  assert.equal(isMuseOrigin("https://muse.ai/chat"), true);
   for (const url of [
     "https://auth.muse.ai",
     "https://muse.ai:8443",
@@ -54,7 +54,7 @@ test("only permits HTTP(S) external links and exact application-origin notificat
     "https://auth.meta.com/aymh/",
     "invalid",
   ]) {
-    assert.equal(isNotificationOrigin(url), false);
+    assert.equal(isMuseOrigin(url), false);
   }
 });
 
@@ -333,33 +333,64 @@ test("closing a popup releases its opener lifecycle listener", async () => {
   assert.equal(window.listenerCount("closed"), 0);
 });
 
-test("both session permission handlers restrict notifications to the application origin", async () => {
+test("both session permission handlers allow only notifications and clipboard writes at the exact Muse origin", async () => {
   const { ses } = await startWithMocks();
-  for (const url of [
-    "https://muse.ai/chat",
-    "https://auth.muse.ai",
-    "https://muse.ai:8443",
-    "invalid",
+  for (const permission of [
+    "notifications",
+    "clipboard-sanitized-write",
+    "clipboard-read",
+    "clipboard-write",
+    "media",
+    "camera",
+    "unknown",
   ]) {
-    for (const permission of ["notifications", "camera"]) {
+    for (const [url, trusted] of [
+      ["https://muse.ai", true],
+      ["https://muse.ai/chat", true],
+      ["https://muse.ai:443/chat", true],
+      ["https://auth.muse.ai", false],
+      ["https://muse.ai:8443", false],
+      ["http://muse.ai", false],
+      ["https://muse.ai.evil.test", false],
+      ["https://muse.ai@evil.test", false],
+      ["https://auth.meta.com/aymh/", false],
+      ["https://example.com", false],
+      ["file:///tmp/test", false],
+      ["about:blank", false],
+      ["invalid", false],
+      ["", false],
+      [undefined, false],
+    ]) {
       const expected =
-        permission === "notifications" && isNotificationOrigin(url);
-      assert.equal(ses.checkPermission(null, permission, url), expected);
-      let granted;
-      ses.requestPermission(
-        null,
-        permission,
-        (value) => {
-          granted = value;
-        },
-        { requestingUrl: url },
-      );
-      assert.equal(granted, expected);
+        trusted &&
+        (permission === "notifications" ||
+          permission === "clipboard-sanitized-write");
+      const label = `${permission} from ${url}`;
+      // Permission decisions must use the requesting frame, not the top-level URL.
+      for (const contents of [null, { getURL: () => "https://muse.ai/" }]) {
+        assert.equal(
+          ses.checkPermission(contents, permission, url),
+          expected,
+          label,
+        );
+        let granted;
+        ses.requestPermission(
+          contents,
+          permission,
+          (value) => {
+            granted = value;
+          },
+          { requestingUrl: url },
+        );
+        assert.equal(granted, expected, label);
+      }
     }
+    let granted;
+    ses.requestPermission(null, permission, (value) => {
+      granted = value;
+    });
+    assert.equal(granted, false, `${permission} without request details`);
   }
-  ses.requestPermission(null, "notifications", (granted) =>
-    assert.equal(granted, false),
-  );
 });
 
 test("reserves distinct paths for simultaneous downloads before either writes data", async () => {
