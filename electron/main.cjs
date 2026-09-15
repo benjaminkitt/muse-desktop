@@ -109,7 +109,11 @@ function configureWindowNavigation(window, isPopup = false) {
   const guardNavigation = (event, url, _isInPlace, isMainFrame = true) => {
     const allowed = isPopup
       ? url === "about:blank" || isAllowedExternalUrl(url)
-      : isTrustedNavigation(url);
+      : isMainFrame
+        ? isTrustedNavigation(url)
+        : // Hosted apps can redirect to a separate content origin. Keep the
+          // top-level allowlist without canceling safe iframe redirects.
+          isAllowedExternalUrl(url);
     if (!allowed) {
       event.preventDefault();
       if (!isPopup && isMainFrame) openExternalUrl(url);
