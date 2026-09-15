@@ -104,6 +104,10 @@ async function startWithMocks(downloadsDir, options = {}) {
   const app = new EventEmitter();
   app.getPath = () => downloadsDir ?? os.tmpdir();
   app.setPath = () => {};
+  const desktopNames = [];
+  app.setDesktopName = (name) => {
+    desktopNames.push(name);
+  };
   app.whenReady = () => Promise.resolve();
   const electron = {
     app,
@@ -134,7 +138,7 @@ async function startWithMocks(downloadsDir, options = {}) {
   );
   await Promise.resolve();
   await new Promise((resolve) => setImmediate(resolve));
-  return { windows, externalUrls, ses, dialogs, BrowserWindow };
+  return { windows, externalUrls, ses, dialogs, BrowserWindow, desktopNames };
 }
 
 test("successful initial load waits for ready-to-show without a recovery dialog", async () => {
@@ -146,6 +150,16 @@ test("successful initial load waits for ready-to-show without a recovery dialog"
   window.emit("ready-to-show");
   assert.equal(window.showCount, 1);
   assert.equal(dialogs.length, 0);
+});
+
+test("declares the Linux desktop entry identity so shells can match the window to its icon", async () => {
+  const { desktopNames } = await startWithMocks();
+  // The desktop name must match the packaged .desktop filename and its
+  // StartupWMClass, or desktop shells fall back to a generic icon.
+  assert.deepEqual(
+    desktopNames,
+    process.platform === "linux" ? ["muse-desktop.desktop"] : [],
+  );
 });
 
 test("failed initial loads show recovery without ready-to-show and can retry repeatedly", async () => {

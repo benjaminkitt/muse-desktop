@@ -178,6 +178,12 @@ function createMuseWindow() {
 }
 
 function start() {
+  // Align the running window with the installed Linux desktop entry so desktop
+  // shells (GNOME, KDE) resolve the muse-desktop icon via WM_CLASS/app_id.
+  if (process.platform === "linux") {
+    app.setDesktopName("muse-desktop.desktop");
+  }
+
   // Keep browser profile data in a predictable, product-specific directory.
   app.setPath("userData", path.join(app.getPath("appData"), "Muse"));
 

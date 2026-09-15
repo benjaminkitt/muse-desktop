@@ -33,10 +33,11 @@
               filter = path: type:
                 let relative = lib.removePrefix (toString ./. + "/") (toString path);
                 in type == "directory" && builtins.elem relative [ "electron" "build" ]
+                  || lib.hasPrefix "build/icons" relative
                   || builtins.elem relative [
                     "package.json" "LICENSE"
                     "electron/main.cjs" "electron/utils.cjs"
-                    "build/icon.png" "build/icon.icns"
+                    "build/icon.png" "build/icon.icns" "build/icon.svg"
                   ];
             };
             nativeBuildInputs = [ pkgs.makeWrapper ]
@@ -49,6 +50,9 @@
                 comment = "Desktop client for Muse";
                 exec = "muse-desktop";
                 icon = "muse-desktop";
+                # Matches the desktop name set by electron/main.cjs so desktop
+                # shells link the running window to this entry and its icon.
+                startupWMClass = "muse-desktop";
                 categories = [ "Utility" ];
                 terminal = false;
               })
@@ -61,7 +65,20 @@
               makeWrapper ${lib.getExe pkgs.electron_43} "$out/bin/muse-desktop" \
                 --add-flags "$out/share/muse-desktop"
             '' + lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
-              install -Dm644 build/icon.png "$out/share/icons/hicolor/1024x1024/apps/muse-desktop.png"
+              # Standard freedesktop icon theme locations: one PNG per size plus
+              # the scalable SVG so desktop shells find the icon at any size.
+              # Fail loudly if the set is missing from the source (for example
+              # untracked files are invisible to the flake's git filter).
+              icons=(build/icons/*.png)
+              if [ ! -e "''${icons[0]}" ]; then
+                echo "build/icons PNG set is missing from the Nix source" >&2
+                exit 1
+              fi
+              for icon in "''${icons[@]}"; do
+                size="$(basename "$icon" .png)"
+                install -Dm644 "$icon" "$out/share/icons/hicolor/$size/apps/muse-desktop.png"
+              done
+              install -Dm644 build/icon.svg "$out/share/icons/hicolor/scalable/apps/muse-desktop.svg"
             '' + lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
               mkdir -p "$out/Applications/Muse.app/Contents/"{MacOS,Resources}
               makeWrapper "$out/bin/muse-desktop" "$out/Applications/Muse.app/Contents/MacOS/Muse"
