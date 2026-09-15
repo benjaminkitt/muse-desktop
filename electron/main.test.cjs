@@ -267,6 +267,55 @@ test("guards main-window navigation and redirects while allowing safe popups", a
   assert.deepEqual(window.loadedUrls, ["https://muse.ai/"]);
 });
 
+test("subframe redirects allow HTTP(S) without relaxing main-frame navigation", async () => {
+  const {
+    windows: [window],
+    externalUrls,
+  } = await startWithMocks();
+  const contentUrl = "https://example.s.metaaiusercontent.com/";
+  for (const [url, allowed] of [
+    [contentUrl, true],
+    ["https://example.com/app", true],
+    ["http://example.com/app", true],
+    ["https://muse.ai/app", true],
+    ["file:///tmp/test", false],
+    ["javascript:alert(1)", false],
+    ["custom:launch", false],
+    ["data:text/html,test", false],
+    ["invalid", false],
+  ]) {
+    let prevented = false;
+    window.webContents.emit(
+      "will-redirect",
+      {
+        preventDefault() {
+          prevented = true;
+        },
+      },
+      url,
+      false,
+      false,
+    );
+    assert.equal(prevented, !allowed, url);
+    assert.equal(externalUrls.length, 0);
+  }
+
+  let prevented = false;
+  window.webContents.emit(
+    "will-redirect",
+    {
+      preventDefault() {
+        prevented = true;
+      },
+    },
+    contentUrl,
+    false,
+    true,
+  );
+  assert.equal(prevented, true);
+  assert.deepEqual(externalUrls, [contentUrl]);
+});
+
 test("OAuth children retain provider redirects and callbacks and guard nested popups", async () => {
   const { windows, externalUrls, BrowserWindow } = await startWithMocks();
   const window = windows[0];
