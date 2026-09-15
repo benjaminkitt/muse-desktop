@@ -1,6 +1,6 @@
 {
   "name": "muse-desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "description": "A cross-platform desktop client for Meta Muse",
@@ -35,7 +35,9 @@
       "syncDesktopName": true
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "signAndEditExecutable": false
     },
     "mac": {
