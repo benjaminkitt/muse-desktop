@@ -10,7 +10,7 @@ Download an installer from the [latest GitHub release](https://github.com/benjam
 
 - **Windows (x64):** download the `.exe` and run the installer.
 - **macOS:** choose `arm64` for Apple Silicon or `x64` for Intel. Open the `.dmg` and drag Muse into Applications, or extract the `.zip` and move Muse into Applications.
-- **Linux (x64):** install the `.deb` on Debian/Ubuntu (`sudo apt install ./Muse-*.deb`) or the `.rpm` on Fedora (`sudo dnf install ./Muse-*.rpm`). Alternatively, download the AppImage, make it executable with `chmod +x Muse-*.AppImage`, and run it with `./Muse-*.AppImage`. AppImages may require your distribution's FUSE compatibility package. On NixOS, use the Nix package below instead.
+- **Linux (x64 and ARM64):** install the `.deb` on Debian/Ubuntu (`sudo apt install ./Muse-*.deb`) or the `.rpm` on Fedora (`sudo dnf install ./Muse-*.rpm`). Alternatively, download the AppImage, make it executable with `chmod +x Muse-*.AppImage`, and run it with `./Muse-*.AppImage`. Choose the `x86_64` or `arm64` file matching your CPU (`uname -m`). AppImages may require your distribution's FUSE compatibility package. On NixOS, use the Nix package below instead.
 
 These builds are not developer-signed or notarized. Windows SmartScreen and macOS Gatekeeper may show warnings or block launch. Only approve a downloaded app if you trust its source; on macOS, **System Settings → Privacy & Security → Open Anyway** may be available after attempting to open it. Managed devices may prohibit unsigned applications.
 
